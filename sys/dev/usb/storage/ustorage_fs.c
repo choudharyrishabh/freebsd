@@ -57,7 +57,8 @@
 #include <sys/callout.h>
 #include <sys/malloc.h>
 #include <sys/priv.h>
-
+#include <sys/cam/ctl/ctl_io.h>
+#include <sys/cam/ctl/ctl_frontend.h>
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
 #include "usbdevs.h"
@@ -517,9 +518,13 @@ ustorage_fs_handle_request(device_t dev,
 }
 
 static void
-ustorage_fs_t_bbb_command_callback(struct usb_xfer *xfer, usb_error_t error)
+ustorage_fs_t_bbb_command_callback(struct usb_xfer *xfer, usb_error_t error)//qwer
 {
 	struct ustorage_fs_softc *sc = usbd_xfer_softc(xfer);
+	struct ustorage_fs_lun *currlun = sc->sc_transfer.currlun;
+	struct ctl_scsiio *scsiio;
+	union ctl_io *io;
+	
 	uint32_t tag;
 	uint8_t err = 0;
 
@@ -572,6 +577,18 @@ ustorage_fs_t_bbb_command_callback(struct usb_xfer *xfer, usb_error_t error)
 			    sc->sc_transfer.cmd_len);
 			break;
 		}
+
+		io = (struct ctl_io *)malloc(sizeof(ctl_io));
+	        scsiio = (struct ctl_scsiio *)malloc(sizeof(ctl_scsiio));
+        	scsiio->sense_data = (struct scsi_sense_data *)currlun->sense_data;
+	        scsiio->sense_length = sc->sc_transfer.data_rem;
+        	scsiio->cdb_len = sc->sc_transfer.cmd_len;
+	        scsiio->kern_data_ptr = (uint8_t *)sc->sc_dma_ptr;
+        	scsiio->kern_data_len = sc->sc_transfer.data_rem;
+	        scsiio->kern_total_len = sc->sc_transfer.data_rem;
+        	io->scsiio = scsiio;
+
+	        ctl_queue(io);
 
 		err = ustorage_fs_do_cmd(sc);
 		if (err) {
